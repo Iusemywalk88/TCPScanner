@@ -388,3 +388,121 @@ func TestScanReuse(t *testing.T) {
 		}
 	}
 }
+
+// recordingDialer records the network and address of every dial.
+type recordingDialer struct {
+	networks  []string
+	addresses []string
+}
+
+func (d *recordingDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	d.networks = append(d.networks, network)
+	d.addresses = append(d.addresses, address)
+	return fakeConn{}, nil
+}
+
+func TestDialerAddress(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"ipv4", "192.0.2.1", "192.0.2.1:80"},
+		{"ipv6", "2001:db8::1", "[2001:db8::1]:80"},
+		{"ipv6 zone", "fe80::1%eth0", "[fe80::1%eth0]:80"},
+		{"ipv4-mapped", "::ffff:192.0.2.1", "192.0.2.1:80"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &recordingDialer{}
+			s, err := New(WithConcurrency(1), WithDialer(d))
+			if err != nil {
+				t.Fatalf("New error: %v", err)
+			}
+			ch, err := s.Scan(context.Background(), []string{tt.host}, Ports(80))
+			if err != nil {
+				t.Fatalf("Scan error: %v", err)
+			}
+			for range ch {
+			}
+
+			if len(d.addresses) != 1 {
+				t.Fatalf("addresses = %v, want 1 dial", d.addresses)
+			}
+			if d.addresses[0] != tt.want {
+				t.Errorf("address = %q, want %q", d.addresses[0], tt.want)
+			}
+			if d.networks[0] != "tcp" {
+				t.Errorf("network = %q, want tcp", d.networks[0])
+			}
+		})
+	}
+}
+
+func TestScanFullRange(t *testing.T) {
+	d := &countingDialer{}
+	s, err := New(WithConcurrency(100), WithDialer(d))
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+
+	ch, err := s.Scan(context.Background(), []string{"192.0.2.1"}, Range(1, 65535))
+	if err != nil {
+		t.Fatalf("Scan error: %v", err)
+	}
+
+	done := make(chan int, 1)
+	go func() {
+		seen := make(map[uint16]struct{}, 65535)
+		for r := range ch {
+			if _, dup := seen[r.Port]; dup {
+				t.Errorf("duplicate port %d", r.Port)
+			}
+			seen[r.Port] = struct{}{}
+		}
+		done <- len(seen)
+	}()
+
+	select {
+	case distinct := <-done:
+		if distinct != 65535 {
+			t.Fatalf("distinct ports = %d, want 65535", distinct)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("full range scan did not complete within 30s")
+	}
+}
+
+func TestScanIPv6(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("real network scan only runs on linux and darwin")
+	}
+
+	l, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback not available: %v", err)
+	}
+	defer l.Close()
+	port := uint16(l.Addr().(*net.TCPAddr).Port)
+
+	s, err := New(WithConcurrency(2))
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+
+	ch, err := s.Scan(context.Background(), []string{"::1"}, Ports(int(port)))
+	if err != nil {
+		t.Fatalf("Scan error: %v", err)
+	}
+
+	var results int
+	for r := range ch {
+		results++
+		if r.State != StateOpen {
+			t.Errorf("state = %v, want open", r.State)
+		}
+	}
+	if results != 1 {
+		t.Fatalf("results = %d, want 1", results)
+	}
+}

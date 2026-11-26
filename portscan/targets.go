@@ -122,11 +122,9 @@ func isHostnameChar(c rune) bool {
 		(c >= '0' && c <= '9')
 }
 
-// allDigits reports whether s is non-empty and consists only of ASCII digits.
+// allDigits reports whether s consists only of ASCII digits. It is only ever
+// called with a non-empty label.
 func allDigits(s string) bool {
-	if s == "" {
-		return false
-	}
 	for _, c := range s {
 		if c < '0' || c > '9' {
 			return false
