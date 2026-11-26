@@ -5,7 +5,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestNormalizePorts(t *testing.T) {
@@ -68,7 +67,7 @@ func TestNormalizePortsErrors(t *testing.T) {
 		{"empty union", Union()},
 		{"union with invalid part", Union(Range(1, 10), Ports(70000))},
 		{"huge range zero to max", Range(0, 1<<62)},
-		{"huge range to max int", Range(1, math.MaxInt64)},
+		{"huge range to max int", Range(1, math.MaxInt)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,21 +82,35 @@ func TestNormalizePortsErrors(t *testing.T) {
 	}
 }
 
-func TestNormalizePortsHugeRangePrompt(t *testing.T) {
-	done := make(chan error, 1)
-	go func() {
-		_, err := normalizePorts(Range(0, 1<<62))
-		done <- err
-	}()
+func TestPortSpecImmutability(t *testing.T) {
+	t.Run("union does not share memory with args", func(t *testing.T) {
+		a := Range(1, 10)
+		b := Ports(80)
+		u := Union(a, b)
 
-	select {
-	case err := <-done:
-		if !errors.Is(err, ErrInvalidPort) {
-			t.Fatalf("error = %v, want ErrInvalidPort", err)
+		u.intervals[0].from = 999
+		u.intervals[1].to = 999
+
+		if a.intervals[0].from != 1 || a.intervals[0].to != 10 {
+			t.Fatalf("Union shares memory with a: %+v", a.intervals)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("normalizePorts did not return promptly for Range(0, 1<<62)")
-	}
+		if b.intervals[0].from != 80 || b.intervals[0].to != 80 {
+			t.Fatalf("Union shares memory with b: %+v", b.intervals)
+		}
+	})
+
+	t.Run("normalize does not mutate spec", func(t *testing.T) {
+		spec := Union(Range(1, 10), Ports(80))
+		before := append([]interval(nil), spec.intervals...)
+
+		if _, err := normalizePorts(spec); err != nil {
+			t.Fatalf("normalizePorts error: %v", err)
+		}
+
+		if !slices.Equal(spec.intervals, before) {
+			t.Fatalf("normalizePorts mutated spec: got %+v, want %+v", spec.intervals, before)
+		}
+	})
 }
 
 // seq returns the ascending port list [from, to].
