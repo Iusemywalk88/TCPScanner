@@ -6,12 +6,13 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
 // fakeResolver is a test double for Resolver with a call counter.
 type fakeResolver struct {
-	calls   int
+	calls   atomic.Int32
 	results map[string][]netip.Addr
 	err     error
 	network string
@@ -19,7 +20,7 @@ type fakeResolver struct {
 }
 
 func (f *fakeResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
-	f.calls++
+	f.calls.Add(1)
 	f.network = network
 	f.host = host
 	if f.err != nil {
@@ -252,8 +253,8 @@ func TestResolveTargetLiteralNoResolver(t *testing.T) {
 			if len(ips) != 1 || ips[0].String() != tt.want {
 				t.Fatalf("ips = %v, want [%s]", ips, tt.want)
 			}
-			if fake.calls != 0 {
-				t.Errorf("resolver calls = %d, want 0", fake.calls)
+			if fake.calls.Load() != 0 {
+				t.Errorf("resolver calls = %d, want 0", fake.calls.Load())
 			}
 		})
 	}
@@ -289,8 +290,8 @@ func TestResolveTarget(t *testing.T) {
 			if !slices.Equal(ips, tt.want) {
 				t.Fatalf("ips = %v, want %v", ips, tt.want)
 			}
-			if fake.calls != 1 {
-				t.Errorf("resolver calls = %d, want 1", fake.calls)
+			if fake.calls.Load() != 1 {
+				t.Errorf("resolver calls = %d, want 1", fake.calls.Load())
 			}
 			if fake.network != "ip" {
 				t.Errorf("network = %q, want %q", fake.network, "ip")
@@ -340,8 +341,8 @@ func TestResolveTargetErrors(t *testing.T) {
 		if errors.Is(err, ErrResolve) {
 			t.Errorf("error = %v, should not wrap ErrResolve", err)
 		}
-		if fake.calls != 0 {
-			t.Errorf("resolver calls = %d, want 0", fake.calls)
+		if fake.calls.Load() != 0 {
+			t.Errorf("resolver calls = %d, want 0", fake.calls.Load())
 		}
 	})
 }
