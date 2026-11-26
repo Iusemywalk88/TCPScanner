@@ -8,7 +8,8 @@ import (
 )
 
 // Dialer establishes a TCP connection. It is the minimal surface of
-// *net.Dialer needed by this package.
+// *net.Dialer needed by this package. It is exported so tests and callers can
+// substitute a fake or a custom dialer via WithDialer.
 type Dialer interface {
 	DialContext(ctx context.Context, network, address string) (net.Conn, error)
 }

@@ -49,16 +49,19 @@ func (s State) String() string {
 
 // Result is the outcome of checking a single TCP port on a single IP address.
 type Result struct {
-	// Host is the target as passed to Scan.
+	// Host is the target exactly as passed to Scan.
 	Host string
-	// IP is the concrete address that was dialed.
+	// IP is the concrete address that was dialed. It is the zero Addr for a
+	// resolution failure.
 	IP netip.Addr
-	// Port is the TCP port that was checked.
+	// Port is the TCP port that was checked. It is 0 for a resolution
+	// failure.
 	Port uint16
 	// State classifies the outcome.
 	State State
 	// Duration is the time spent on the check.
 	Duration time.Duration
-	// Err is the underlying error, if any. It is nil when State is StateOpen.
+	// Err is the underlying error, if any. It is nil only when State is
+	// StateOpen.
 	Err error
 }

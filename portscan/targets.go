@@ -9,7 +9,8 @@ import (
 )
 
 // Resolver resolves a DNS name to IP addresses. It is the minimal surface of
-// *net.Resolver needed by this package.
+// *net.Resolver needed by this package. It is exported so tests and callers
+// can substitute a fake or a custom resolver via WithResolver.
 type Resolver interface {
 	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
 }

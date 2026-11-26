@@ -32,6 +32,18 @@ func New(opts ...Option) (*Scanner, error) {
 // Scan checks every host×port pair and streams the results to the returned
 // channel.
 //
+// Scan returns an error and a nil channel in these cases:
+//
+//   - invalid ports or hosts: an error joined from ErrInvalidPort and/or
+//     ErrInvalidTarget via errors.Join;
+//   - a context that is already canceled or expired: ctx.Err();
+//   - a zero-value or nil Scanner: an error wrapping ErrInvalidOption.
+//
+// An unresolvable host yields a single Result with State=StateError, Port=0,
+// a zero IP, and Err wrapping ErrResolve. Targets that resolve to the same IP
+// are scanned once. A DNS name with multiple addresses is scanned on every
+// address.
+//
 // The returned channel must be drained to completion or ctx must be canceled,
 // otherwise the scan goroutines leak. The order of results is unspecified,
 // and the concurrency limit applies to this single call. After the channel is

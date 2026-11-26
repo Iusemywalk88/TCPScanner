@@ -7,7 +7,8 @@ import (
 )
 
 // PortSpec is an immutable specification of TCP ports, built with Range,
-// Ports, and Union. Invalid values are retained and reported by Scan.
+// Ports, and Union. Invalid values are retained and reported by Scan;
+// duplicate and overlapping ranges are collapsed when the spec is normalized.
 // The zero value is an empty specification.
 type PortSpec struct {
 	intervals []interval
@@ -18,12 +19,15 @@ type interval struct {
 	from, to int
 }
 
-// Range returns a PortSpec covering the inclusive range [from, to].
+// Range returns a PortSpec covering the inclusive range [from, to]. Invalid
+// values are recorded and reported by Scan. Overlapping and adjacent ranges
+// are merged when the spec is normalized.
 func Range(from, to int) PortSpec {
 	return PortSpec{intervals: []interval{{from: from, to: to}}}
 }
 
-// Ports returns a PortSpec covering the given individual ports.
+// Ports returns a PortSpec covering the given individual ports. Duplicate
+// ports are collapsed when the spec is normalized.
 func Ports(ports ...int) PortSpec {
 	ivs := make([]interval, len(ports))
 	for i, p := range ports {
@@ -32,7 +36,9 @@ func Ports(ports ...int) PortSpec {
 	return PortSpec{intervals: ivs}
 }
 
-// Union returns a PortSpec combining all the given specs.
+// Union returns a PortSpec combining all the given specs. Invalid values in
+// any part are reported by Scan; duplicate and overlapping ranges are
+// collapsed when the spec is normalized.
 func Union(specs ...PortSpec) PortSpec {
 	var n int
 	for _, s := range specs {
