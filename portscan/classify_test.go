@@ -42,6 +42,7 @@ func TestClassifyState(t *testing.T) {
 		{"deadline exceeded live", liveCtx, context.DeadlineExceeded, StateTimeout},
 		{"os deadline exceeded", liveCtx, os.ErrDeadlineExceeded, StateTimeout},
 		{"net op timeout", liveCtx, &net.OpError{Op: "dial", Err: os.ErrDeadlineExceeded}, StateTimeout},
+		{"etimedout", liveCtx, syscall.ETIMEDOUT, StateTimeout},
 
 		// canceled (parent context done).
 		{"canceled parent", canceledCtx, context.Canceled, StateCanceled},
