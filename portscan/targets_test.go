@@ -159,6 +159,46 @@ func TestParseTargetsMultipleInvalid(t *testing.T) {
 	}
 }
 
+func TestParseTargetsEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+	}{
+		{"nil", nil},
+		{"empty", []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			targets, err := parseTargets(tt.hosts)
+			if err == nil {
+				t.Fatalf("parseTargets(%v) = %v, want error", tt.hosts, targets)
+			}
+			if !errors.Is(err, ErrInvalidTarget) {
+				t.Fatalf("error = %v, want to wrap ErrInvalidTarget", err)
+			}
+			if !strings.Contains(err.Error(), "no targets") {
+				t.Fatalf("error = %v, want to mention \"no targets\"", err)
+			}
+		})
+	}
+}
+
+func TestParseTargetsOrder(t *testing.T) {
+	targets, err := parseTargets([]string{"b.com", "a.com", "B.com", "c.com"})
+	if err != nil {
+		t.Fatalf("parseTargets error: %v", err)
+	}
+	want := []string{"b.com", "a.com", "c.com"}
+	if len(targets) != len(want) {
+		t.Fatalf("len = %d, want %d", len(targets), len(want))
+	}
+	for i := range targets {
+		if targets[i].host != want[i] {
+			t.Errorf("targets[%d].host = %q, want %q", i, targets[i].host, want[i])
+		}
+	}
+}
+
 func TestParseTargetsDedup(t *testing.T) {
 	tests := []struct {
 		name  string
