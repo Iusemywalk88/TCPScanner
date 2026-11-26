@@ -34,6 +34,10 @@
 //     for Linux and macOS.
 //   - Hosts are resolved sequentially and scanned in order, so a single
 //     target receives up to the configured number of simultaneous dials.
+//   - DNS resolution runs sequentially in a single goroutine and is bounded
+//     only by ctx and the resolver's own timeouts (WithConnectTimeout does
+//     not apply); a hung resolution delays the scan of all subsequent targets
+//     until it completes or ctx is canceled.
 //   - The concurrency limit applies to a single Scan call.
 //   - Results are not ordered.
 package portscan

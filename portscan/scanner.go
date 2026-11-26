@@ -44,6 +44,11 @@ func New(opts ...Option) (*Scanner, error) {
 // are scanned once. A DNS name with multiple addresses is scanned on every
 // address.
 //
+// DNS names are resolved sequentially in a single goroutine, bounded only by
+// ctx and the resolver's own timeouts (WithConnectTimeout does not apply to
+// resolution). A hung resolution of one name delays the scanning of all
+// subsequent targets until it completes or ctx is canceled.
+//
 // The returned channel must be drained to completion or ctx must be canceled,
 // otherwise the scan goroutines leak. The order of results is unspecified,
 // and the concurrency limit applies to this single call. After the channel is

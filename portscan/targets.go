@@ -77,7 +77,10 @@ func parseTarget(host string) (target, error) {
 // normalizeHostname validates host as a DNS name and returns its lowercase
 // form without a trailing root dot. Hostnames are restricted to ASCII
 // letters, digits, hyphen, underscore, and dots; internationalized names
-// must be passed in punycode (xn--) form.
+// must be passed in punycode (xn--) form. A name whose last label is entirely
+// numeric is rejected: libc treats such strings ("123", "1.2.3") as legacy
+// IPv4 forms via inet_aton, which netip.ParseAddr does not parse, and RFC 3696
+// forbids an all-numeric top-level label.
 func normalizeHostname(host string) (string, error) {
 	s := host
 	// Allow a single trailing root dot.
