@@ -343,8 +343,8 @@ func TestRunBackpressure(t *testing.T) {
 	// Sanctioned single time.Sleep: assert nothing more happens (backpressure)
 	// now that the reader is absent.
 	time.Sleep(50 * time.Millisecond)
-	if got := d.dials.Load(); got > 2*n+n {
-		t.Fatalf("dials = %d, want <= %d (no backpressure)", got, 2*n+n)
+	if got := d.dials.Load(); got != 2*n {
+		t.Fatalf("dials = %d, want %d", got, 2*n)
 	}
 
 	// Now read everything: every result must arrive with no loss.
@@ -357,18 +357,114 @@ func TestRunBackpressure(t *testing.T) {
 	}
 }
 
+// blockingResolver blocks until the context is done, then fails with it.
+type blockingResolver struct {
+	calls atomic.Int64
+}
+
+func (r *blockingResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
+	r.calls.Add(1)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func TestRunCancelWithoutReader(t *testing.T) {
+	const n = 4
+	const total = 1000
+
 	d := &countingDialer{}
-	cfg := config{concurrency: 4, connectTimeout: time.Second, dialer: d, resolver: &fakeResolver{}}
+	cfg := config{concurrency: n, connectTimeout: time.Second, dialer: d, resolver: &fakeResolver{}}
 	targets := []target{lit("192.0.2.1")}
-	ports := makePorts(1000)
+	ports := makePorts(total)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	out := run(ctx, cfg, targets, ports)
+
+	// Reader is absent: wait until workers are blocked in send (2n dials).
+	waitFor(t, "workers blocked in send", 5*time.Second, func() bool {
+		return d.dials.Load() >= 2*n
+	})
+
 	cancel() // reader leaves without reading
 
 	// out must still close: cancel unblocks send, workers exit, closer closes.
 	waitClosed(t, out, 5*time.Second)
+
+	// After cancellation no new dials may keep starting.
+	if got := d.dials.Load(); got > total {
+		t.Fatalf("dials after cancel = %d, want <= %d", got, total)
+	}
+}
+
+func TestRunCancelDuringResolve(t *testing.T) {
+	res := &blockingResolver{}
+	d := &countingDialer{}
+	cfg := config{concurrency: 4, connectTimeout: time.Second, dialer: d, resolver: res}
+	targets := []target{{host: "slow.example", norm: "slow.example"}}
+	ports := makePorts(10)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	out := run(ctx, cfg, targets, ports)
+
+	// Wait until the resolver is called (blocked on ctx.Done).
+	waitFor(t, "resolver called", 5*time.Second, func() bool {
+		return res.calls.Load() >= 1
+	})
+
+	cancel()
+
+	// The channel must close with no results at all, and no dials.
+	var results int
+	deadline := time.After(5 * time.Second)
+drain:
+	for {
+		select {
+		case r, ok := <-out:
+			if !ok {
+				break drain
+			}
+			results++
+			if errors.Is(r.Err, ErrResolve) {
+				t.Errorf("got ErrResolve result, want none: %v", r.Err)
+			}
+		case <-deadline:
+			t.Fatal("out did not close after cancellation during resolve")
+		}
+	}
+	if results != 0 {
+		t.Fatalf("results = %d, want 0", results)
+	}
+	if d.dials.Load() != 0 {
+		t.Fatalf("dials = %d, want 0", d.dials.Load())
+	}
+}
+
+func TestRunAttemptTimeout(t *testing.T) {
+	d := &cancelDialer{}
+	cfg := config{concurrency: 2, connectTimeout: 20 * time.Millisecond, dialer: d, resolver: &fakeResolver{}}
+	targets := []target{lit("192.0.2.1")}
+	ports := makePorts(5)
+
+	out := run(context.Background(), cfg, targets, ports)
+
+	var results int
+	for r := range out {
+		results++
+		if r.State != StateTimeout {
+			t.Errorf("state = %v, want timeout", r.State)
+		}
+		if r.Err == nil {
+			t.Error("Err = nil, want non-nil")
+		} else if !errors.Is(r.Err, context.DeadlineExceeded) {
+			t.Errorf("Err = %v, want DeadlineExceeded", r.Err)
+		}
+		if r.Duration < 20*time.Millisecond {
+			t.Errorf("duration = %v, want >= 20ms", r.Duration)
+		}
+	}
+	if results != len(ports) {
+		t.Fatalf("results = %d, want %d", results, len(ports))
+	}
 }
 
 func TestRunResolveError(t *testing.T) {
