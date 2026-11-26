@@ -1,3 +1,5 @@
+![CI](https://github.com/Iusemywalk88/TCPScanner/actions/workflows/ci.yml/badge.svg)
+
 # TCPScanner
 
 Пакет `portscan` выполняет TCP Connect-сканирование портов на одном или нескольких
